@@ -155,12 +155,16 @@ class SquadExample(object):
                doc_tokens,
                orig_answer_text=None,
                start_position=None,
+               # gai
+               paragraph_text=None,
                end_position=None):
     self.qas_id = qas_id
     self.question_text = question_text
     self.doc_tokens = doc_tokens
     self.orig_answer_text = orig_answer_text
     self.start_position = start_position
+    #gai
+    self.paragraph_text = paragraph_text
     self.end_position = end_position
 
   def __str__(self):
@@ -253,6 +257,7 @@ def read_squad_examples(input_file, is_training):
           answer_offset = answer["answer_start"]-1
           answer_length = len(orig_answer_text)
           start_position = char_to_word_offset[answer_offset]
+          # print(question_text, answer, start_position, answer_offset, answer_length)
           # print(paragraph_text, question_text, answer, len(char_to_word_offset), answer_offset, answer_length)
           end_position = char_to_word_offset[answer_offset + answer_length - 1]
           # Only add answers where the text can be exactly recovered from the
@@ -275,6 +280,8 @@ def read_squad_examples(input_file, is_training):
             doc_tokens=doc_tokens,
             orig_answer_text=orig_answer_text,
             start_position=start_position,
+            # gai
+            paragraph_text = paragraph_text,
             end_position=end_position)
         examples.append(example)
   return examples
@@ -704,6 +711,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
                       max_answer_length, do_lower_case, output_prediction_file,
                       output_nbest_file):
   """Write final predictions to the json file."""
+  # print(56667,all_examples)
   tf.logging.info("Writing predictions to: %s" % (output_prediction_file))
   tf.logging.info("Writing nbest to: %s" % (output_nbest_file))
 
@@ -789,6 +797,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
       orig_text = " ".join(orig_tokens)
 
       final_text = get_final_text(tok_text, orig_text, do_lower_case)
+      # print("here", final_text)
       if final_text in seen_predictions:
         continue
 
@@ -823,9 +832,34 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
       nbest_json.append(output)
 
     assert len(nbest_json) >= 1
-
-    all_predictions[example.qas_id] = nbest_json[0]["text"]
-    print(1111,nbest_json[0]["text"])
+    tag = False
+    # 预测出来末尾有句号,将句号删除
+    if (nbest_json[0]["text"])[-1]=="。":
+        nbest_json[0]["text"]=(nbest_json[0]["text"])[:(len(nbest_json[0]["text"])-1)]
+    for ele_sen in example.paragraph_text.split("。"):
+        if nbest_json[0]["text"] in ele_sen:
+            all_predictions[example.qas_id] = ele_sen
+            tag = True
+            break
+    if tag == False:
+        # 整段文字是答案,output是一个OrderedDict,取第2个
+        # print("备选答案个数：", len(nbest_json))
+        if ((len(nbest_json[0]["text"])) >100) and (len(nbest_json)>1):
+            # print(example.qas_id, nbest_json[1]["text"])
+            for ele_sen in example.paragraph_text.split("。"):
+                if nbest_json[1]["text"] in ele_sen:
+                    # print(nbest_json[1]["text"], ele_sen)
+                    all_predictions[example.qas_id] = ele_sen
+                    tag = True
+                    break
+        else:
+            all_predictions[example.qas_id] = nbest_json[0]["text"]
+            # print(example.qas_id, nbest_json[0]["text"])
+    #output是一个OrderedDict,取第一个
+    # all_predictions[example.qas_id] = nbest_json[0]["text"]
+    # print(nbest_json[0]["probability"])
+    # print(nbest_json[0]["start_logit"])
+    # print(1111,example.qas_id,example.paragraph_text,nbest_json[0]["text"])
     all_nbest_json[example.qas_id] = nbest_json
 
   with tf.gfile.GFile(output_prediction_file, "w") as writer:
